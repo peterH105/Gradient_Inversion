@@ -7,3 +7,6 @@ Sensitivity analysis of gravity gradient inversion of the Moho depth - A case ex
 Geophysical Journal International, 2020.
 
 The collection contains two Jupyter notebook files that can be downloaded and run with Python 3. Alternatively, the notebooks can be run online using the Binder container.
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/peterH105/Gradient_Inversion/tree/master/code/master)
+Copy markdown link to clipboard
