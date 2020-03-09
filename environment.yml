@@ -5,5 +5,5 @@ dependencies:
   - python=3.6
   - numpy
   - matplotlib
-  - processbar
+  - progressbar
   - scipy
