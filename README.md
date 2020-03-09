@@ -9,3 +9,4 @@ Geophysical Journal International, 2020.
 The collection contains two Jupyter notebook files that can be downloaded and run with Python 3.
 Alternatively, the notebooks can be run online using the Binder tool below.
 
+https://mybinder.org/v2/gh/peterH105/Gradient_Inversion/master
