@@ -16,4 +16,4 @@ Alternatively, the notebooks can be run online using the Binder tool below.
 
 https://mybinder.org/v2/gh/peterH105/Gradient_Inversion/master
 
-NOTE: The binder file is temporarily not working due to Permission issues with running executable files. This error will be fixed soon.  
+NOTE: The binder file is temporarily not working due to Permission issues with running the executable tesseroid files. This error will be fixed soon.  
