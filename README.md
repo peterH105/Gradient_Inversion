@@ -15,3 +15,5 @@ The collection contains two Jupyter notebook files that can be downloaded and ru
 Alternatively, the notebooks can be run online using the Binder tool below.
 
 https://mybinder.org/v2/gh/peterH105/Gradient_Inversion/master
+
+NOTE: The binder file is temporarily not working due to Permission issues with running executable files. This error will be fixed soon.  
