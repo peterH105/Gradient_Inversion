@@ -4,143 +4,66 @@ import subprocess
 import tempfile
 from matplotlib import path
 import progressbar
+    
+def create_Jacobian(lon,lat,top_layer,bottom_layer, heights, density, point_mass_number):
+    """Calculates the Jacobian Matrix of the inversion
+    The shape of the Matrix is n Stations (row) and m Tesseroids (column). 
+    The function get_inversion_design_matrix calculates the gravitational effect of each tesseroid for each station.
+    
+    Input:
+    lon, lat - Vectors of Longitude and Latitude for all stations
+    top_layer, bottom_layer - Vectors of top and bottom layer of tesseroid model
+    heights - Vector of heights of stations
+    density - Vector of density contrast of the tesseroid model
+    point_mass_number - Number of point masses the tesseroids are converted (Float)
+    
+    All vectors have the length of n stations!
+    
+    Output:
+    J - Jacobian or Design matrix"""
+    
+    # resolution of grid (should be 1 degree)
+    dx=(np.amax(lon)-np.amin(lon))/(np.sqrt(len(lon))-1)
+    dy=(np.amax(lat)-np.amin(lat))/(np.sqrt(len(lat))-1)
 
-def construct_tesseroids_from_interface(lonGrid,latGrid,topGrid,bottomGrid, dens):
-    """Create tesseroids from two interfaces (bottom and top).
-    """
-    assert len(np.unique(lonGrid))==lonGrid.shape[1]
-    assert len(np.unique(latGrid))==lonGrid.shape[0]
-    tesses=[]
-    N = len(lonGrid.ravel())
-    dx = (lonGrid.max() - lonGrid.min())/(lonGrid.shape[1]-1)
-    dy = (latGrid.max() - latGrid.min())/(lonGrid.shape[0]-1)
+    print("Calculate Jacobian")
     
-    for i in range(N):
-        lon0 = lonGrid.ravel()[i]
-        lat0 = latGrid.ravel()[i]
-        top = 1000.0 * topGrid.ravel()[i]
-        bottom = 1000.0 * bottomGrid.ravel()[i]
-        tessString = '%.2f %.2f %.2f %.2f %.2f %.2f %.2f\n' % (
-        lon0-0.5*dx,lon0+0.5*dx,lat0-0.5*dy,lat0+0.5*dy,top, bottom, dens[i])
-        tesses.append(tessString)
-
-    return tesses
-import time
-import os
-
-def get_inversion_design_matrix(tesses,stations,component):
+    # Convert the tesseroids to point masses
+    lon0,lat0,depths,masses=tesses_to_pointmass(lon,lat,dx,dy,
+        top_layer,bottom_layer,density,hsplit=point_mass_number,vsplit=point_mass_number)
+        
+    #Calculate gravitational effect of point masses for each stations-point mass combination and store them in a matrix
+    J=memory_save_masspoint_calc_FTG_2(lon0,lat0,depths,masses,lon,lat,heights,point_mass_number)
+    return J
     
-    big_mat = np.zeros((len(stations),len(tesses)))    
-    bigger_mat=[]
-    stat_file,stat_file_path=tempfile.mkstemp()
-    os.close(stat_file)
-    np.savetxt(stat_file_path,stations,fmt='%.5f')
-
-    bar = progressbar.ProgressBar(maxval=len(stations+1), \
-    widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
-    bar.start()
-    #bar=progressbar.ProgressBar(max_value=len(stations+1))
-    for i,tess in enumerate(tesses):
-        bar.update(i+1)
-        tess_file,tess_file_path = tempfile.mkstemp()
-        os.close(tess_file)
-        with open(tess_file_path,'w') as f:
-            f.write(tess)
-            
-        with open(stat_file_path) as c,open(stat_file_path) as d,open(stat_file_path) as e,open(stat_file_path) as f,open(stat_file_path) as g,open(stat_file_path) as h,open(stat_file_path) as j:
-
-            if component=="gz":
-                subz = subprocess.Popen(("Tesseroids/tessgz.exe",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[:,i] = np.genfromtxt(subz.communicate()[0].decode().split('\n'))[:,3]
-                os.remove(tess_file_path)				
-            if component=="gxx":
-                subz = subprocess.Popen(("Tesseroids/tessgxx",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[:,i] = np.genfromtxt(subz.communicate()[0].split('\n'))[:,3]
-                os.remove(tess_file_path)
-            if component=="gxy":
-                subz = subprocess.Popen(("Tesseroids/tessgxy",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[0,:,i] = np.genfromtxt(subz.communicate()[0].split('\n'))[:,3]
-                os.remove(tess_file_path)
-            if component=="gxz":
-                subz = subprocess.Popen(("Tesseroids/tessgxz",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[0,:,i] = np.genfromtxt(subz.communicate()[0].split('\n'))[:,3]
-                os.remove(tess_file_path)	
-            if component=="gyy":
-                subz = subprocess.Popen(("Tesseroids/tessgyy",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[:,i] = np.genfromtxt(subz.communicate()[0].split('\n'))[:,3]
-                os.remove(tess_file_path)	
-            if component=="gyz":
-                subz = subprocess.Popen(("Tesseroids/tessgyz",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[0,:,i] = np.genfromtxt(subz.communicate()[0].split('\n'))[:,3]
-                os.remove(tess_file_path)	
-            if component=="gzz":
-                subzz = subprocess.Popen(("Tesseroids/tessgzz.exe",tess_file_path),stdin=h, stdout=subprocess.PIPE)  
-                big_mat[:,i] = np.genfromtxt(subzz.communicate()[0].decode().split('\n'))[:,3]
-                os.remove(tess_file_path)	
-    bar.finish()
-    return big_mat, bigger_mat
+def invert_and_calculate(prefix,moho,bouguer,J,J_shift,dmatrix,save_fields,shape):
     
-def create_Jacobian(lonGrid,latGrid,component,top,bottom, top_shift, bottom_shift, height_km,dens):
-    # Calculates the Jacobian Matrix of the inversion
-    # The shape of the Matrix is n Stations (row) and m Tesseroids (column). 
-    # The function get_inversion_design_matrix calculates the gravitational effect of each tesseroid for each station.
-    #
-    # Input:
-    # mode - forward calculation of single or all gravity components
-    # lonGrid,latGrid - Grid of Longitude and Latitude values, n X m shape
-    # component - component of which the gravitational effect is calculated
-    # top, bottom - grids of top layer and bottom layer of discretized Moho depth
-    # top_shift, bottom_shift - shifted layers of top and bottom
-    # height_km - Measured height of the data (1D-scalar)
-    # dens - 1D-vector of density contrast
-    #
-    # Output:
-    # J,J_shift - Jacobian matrices
-    # bigger_mat - 3D Jacobian matrix (only necessary for FTG-mode)
+    """Inverts the Moho depth with the calcualted Jacobian Matrix and optionally calculates residual fields
     
-    loni = lonGrid
-    lati = latGrid
-    heights = np.ones(loni.flatten().shape)*height_km*1000.0
-    stations = np.vstack((loni.flatten(),lati.flatten(),heights)).T
-    ny = loni.shape[0]
-    nx = loni.shape[1]
-    N_points = nx*ny
-    tesses = construct_tesseroids_from_interface(lonGrid,latGrid,top*0.001,bottom*0.001, dens)
-    dens=np.abs(dens)
-    print("Calculate 1st Jacobian")
-    J, bigger_mat = get_inversion_design_matrix(tesses,stations,component)
-    tesses_shift = construct_tesseroids_from_interface(lonGrid,latGrid,top_shift*0.001,bottom_shift*0.001, dens) 
-    mode="single"
-    print("Calculate 2nd Jacobian")
-    J_shift, trash  = get_inversion_design_matrix(tesses_shift,stations,component)
-    return J,J_shift,bigger_mat
+    Input:
+    prefix - prefix of datafile (String)
+    moho - Vector of Moho depth of starting model
+    bouguer - Vector of gravity data
+    J, J_shift - Jacobian matrices
+    dmatrix - Smoothing matrix, same shape as J
+    save_fields - "yes" or "no" option to save calculated fields
+    shape - Size of the data
     
-def invert_and_calculate(prefix,moho,bouguer,J,J_shift,bigger_mat,dmatrix,save_fields,mode,shape):
+    Output:
+    moho final - estimated Moho depth
+    bouguer_fit - Fit to gravity data"""
     
-    # Inverts the Moho depth with the calcualted Jacobian Matrix and optionally calculates residual fields
-    #
-    # Input:
-    # prefix - prefix of datafile
-    # moho - Moho depth of starting model
-    # bouguer - gravity data
-    # J, J_shift - Jacobian matrices
-    # bigger_mat - 3D Jacobian matrix (only necessary for calculation of all gravity components)
-    # dmatrix - Smoothing matrix 
-    # save_fields - "yes" or "no" option to save calculated fields
-    # mode - forward calculation of single or all gravity components
-    # shape - Size of the data
-    #
-    # Output:
-    # moho final - inverted Moho depth
-    # bouguer_fit - Fit to gravity data
-    
+    # Restore Jacobian matrix
     N_points=dmatrix.shape[0]
     big_G = J.reshape((1*N_points,N_points))
     big_delta_G = J_shift.reshape((1*N_points,N_points))
+    
+    # modelled gravitational effect per station is the sum of each tesseroid 
     bouguer_mod=np.sum(big_G, axis=1) 
     big_d=bouguer.reshape((1*N_points)) - bouguer_mod 
     bouguer_obs=bouguer.reshape((1*N_points))
-
+    
+    # Solve linear equation system and calculate Moho depth and data fit
     rhs = big_delta_G.T.dot(big_d)-dmatrix.T.dot(dmatrix).dot(moho/1000)
     lhs = big_delta_G.T.dot(big_delta_G)+dmatrix.T.dot(dmatrix)
     moho_shift = np.linalg.solve(lhs,rhs)
@@ -158,63 +81,48 @@ def invert_and_calculate(prefix,moho,bouguer,J,J_shift,bigger_mat,dmatrix,save_f
     return moho_final,bouguer_fit
     
 def weight_Jacobian(J,J_shift,dens,dens_start):
-    # Weights the Jacobian matrices with the respective density contrasts
-    #
-    # Input:
-    # J, J_shift - Jacobian matrices of initial inversion
-    # dens_start - initial density contrasts
-    # dens - density contrast of each iteration
-    #
-    # Output:
-    # J_new, J_new_shift - Weighted Jacobian matrices
+    """Weights the Jacobian matrices with the respective density contrasts
+    
+    Input:
+    J, J_shift - Jacobian matrices of initial inversion
+    dens_start - initial density contrasts
+    dens - density contrast of each iteration
+    
+    Output:
+    J_new, J_new_shift - Weighted Jacobian matrices"""
+    
     J_new=(np.abs(dens)/dens_start)*J
     J_shift_new=(np.abs(dens)/dens_start)*J_shift
 
     return J_new,J_shift_new
     
    
-def load_grav_data(farfield,sediments,area):
+def load_grav_data(lateral_var,area):
 
-    # Load gravitational data for the inversion 
-    # If inversion is carried out for different component than gzz, gravity data have to be changed manually inside the function 
-    # Gravitational data is corrected for global topography
-    # --> Farfield gravitational effect has to be replaced when changing the study area!
-    # Resolution of the data must be identical with resolution of initial Moho depth! (1 degree)
-    #
-    # Farfield effect accounts for isostatic effect outside of study area and has to be calculated separately 
-    # If farfield effect is activated, gravity data with global topographic correction and farfield compensation is calculated
-    # Gravitational effect of sediments is optional and has to be calcualted separately and must be in the same format
-    #
-    # Input:
-    # farfield - "yes" or "no" statement
-    # sediments - "yes" or "no" statement 
-    # area - boundaries of the study area
-    #
-    # Output:
-    # arrays - 3-column Matrix of the gravity data (Lon,Lat, Gravity)
-
-    data=np.loadtxt('Gravity_Data/Effect_IsoMoho_Amazonia_guu_1degree_225km_vardens.xyz') 
-    data=np.array((data[:,0],data[:,1],data[:,2])).T                           
+    """Load gravitational data for the inversion 
+    If inversion is carried out for different component than gzz, gravity data have to be changed manually inside the function 
+    Gravity data for synthetic example has been calculated from an isostatic Moho depth with two different assumptions:
+      1. Laterally constant density contrast (400 kg/m³)
+      2. Laterally variable density contrast (for values see in paper)
+    
+    Input:
+    lateral_var - "yes" or "no" statement
+    area - boundaries of the study area
+    
+    Output:
+    arrays - 3-column Matrix of the gravity data (Lon,Lat, Gravity)"""
+    
+    if lateral_var=="no":
+        data=np.loadtxt('Gravity_Data/Effect_IsoMoho_Amazonia_guu_1degree_225km.xyz') 
+    
+    if lateral_var=="yes":
+        data=np.loadtxt('Gravity_Data/Effect_IsoMoho_Amazonia_guu_1degree_225km_vardens.xyz') 
+    
+    data=np.array((data[:,0],data[:,1],data[:,2])).T                         
     data=cut_data_to_study_area(data,area)
     data=data[np.lexsort((data[:,0],data[:,1]))]
-    if farfield=="yes":
-        iso_outside=np.loadtxt('Gravity_Data/IsoEffect_farfield_Amazonia_225km_1degree_guu.xyz')
-        iso_outside=iso_outside[np.lexsort((iso_outside[:,0],iso_outside[:,1]))]
-        iso_outside=iso_outside[:,2]
-        arrays = np.array((data[:,0], data[:,1], data[:,2]+iso_outside))              
-    if farfield=="yes" and sediments=="yes":
-        sed=np.loadtxt('Gravity_Data/SedEffect_Amazonia_CRUST_225km_1degree_guu.xyz')
-        sed=sed[np.lexsort((sed[:,0],sed[:,1]))]
-        sed=sed[:,2]
-        arrays = np.array((data[:,0], data[:,1], data[:,2]-sed+iso_outside))
-    if farfield!="yes" and sediments=="yes":
-        sed=np.loadtxt('Gravity_Data/SedEffect_Amazonia_CRUST_225km_1degree_guu.xyz')
-        sed=sed[np.lexsort((sed[:,0],sed[:,1]))]
-        sed=sed[:,2]
-        arrays = np.array((data[:,0], data[:,1], data[:,2]-sed)) 
-    if farfield!="yes" and sediments!="yes":
-        arrays = np.array((data[:,0], data[:,1], data[:,2]))
-    return np.transpose(arrays)
+
+    return data
 
 def cut_data_to_study_area(data,area):
 
@@ -227,16 +135,17 @@ def cut_data_to_study_area(data,area):
 
 def create_density_combinations(k,number_of_units):
     
-    # Creates and sorts all density combinations for k density contrasts of n number of units
-    # The combinations are stored in a matrix
-    # total number of combinations is n^k
-    #
-    # Input:
-    # k - range of density contrasts
-    # number_of_units - Number of tectonic units
-    #
-    # Output:
-    # dens_mat - matrix containing all density combinations (row) of different tectonic units (column)
+    """Creates and sorts all density combinations for k density contrasts of n number of units
+    The combinations are stored in a matrix
+    total number of combinations is n^k
+    
+    Input:
+    k - range of density contrasts
+    number_of_units - Number of tectonic units
+    
+    Output:
+    dens_mat - matrix containing all density combinations (row) of different tectonic units (column)"""
+    
     dens_mat=np.transpose(np.tile(k,(number_of_units,len(k)**(number_of_units-1))))
 
     for i in range(1,number_of_units):
@@ -245,18 +154,18 @@ def create_density_combinations(k,number_of_units):
    
 def interp_regular_grid_on_irregular_database(area,dx,moho,seismic_stations):
 
-    # Interpolate regular grid values on irregular distributed points
-    # points have to be inside the boundaries of the grid
-    #
-    # Input: 
-    # area - boundaries of the study area
-    # dx - step size of the grid
-    # moho - 1-column layer of Moho depth
-    # seismic stations - 3-column layer of seismic stations (Lon,Lat,Station) 
-    #
-    # Output:
-    # interp_arr - Interpolated values of gridded data
-    # moho_diff - Difference between point estimates and interpolated data 
+    """Interpolate regular grid values on irregular distributed points
+    points have to be inside the boundaries of the grid
+    
+    Input: 
+    area - boundaries of the study area
+    dx - step size of the grid
+    moho - 1-column layer of Moho depth
+    seismic stations - 3-column layer of seismic stations (Lon,Lat,Station) 
+    
+    Output:
+    interp_arr - Interpolated values of gridded data
+    moho_diff - Difference between point estimates and interpolated data""" 
     
     lon=np.arange(area[2],area[3]+dx,dx)
     lat=np.arange(area[0],area[1]+dx,dx)
@@ -272,7 +181,7 @@ def interp_regular_grid_on_irregular_database(area,dx,moho,seismic_stations):
     
 def create_rms_matrix(rms_matrix,data,moho_resid_points,moho_resid_grid,i,bouguer_fit):
 
-    # Creates a matrix of RMS-values for residual Moho depth and residual gravity field
+    """Creates a matrix of RMS-values for residual Moho depth and residual gravity field"""
     
     bouguer_fit=bouguer_fit[~(data[:,2]==0)] # remove values outside of coastline
     bouguer_fit_rms=np.sqrt(np.sum(bouguer_fit**2)/(bouguer_fit.shape)) # compute RMS     
@@ -287,51 +196,36 @@ def create_rms_matrix(rms_matrix,data,moho_resid_points,moho_resid_grid,i,bougue
     rms_matrix[i,2]=moho_resid_grid_rms
     return rms_matrix
 
-def construct_layers_for_gradient_inversion(refmoho,moho,area,dx,dy):
+def construct_layers_of_model(data_layer,reference):
 
-    # constructs layers which are required for the inversion
-    #
-    # Input:
-    # refmoho - Reference Moho depth, which is a single values
-    # moho - Moho depth of starting model, is undulating around refmoho 
-    # area - boundaries of the study area
-    # dx and dy - resolution of the layers
-    #
-    # Output:
-    # individual layers of top and bottom of discretized Moho depth
-    reference=refmoho
-    moho[moho==reference]=reference+10 # avoid singularity
-
-    moho_top=moho.copy()
-    moho_bottom=moho.copy()
+    """constructs layers which are required for the inversion
     
-    moho_shift_const=np.copy(moho) - 1000.01 # shift of the Moho depth, essential for second tesseroid model
-
-    moho_top[moho_top < reference] = reference # upper layer
-    moho_bottom[moho_bottom > reference] = reference # lower layer
-    moho_top[np.argwhere(moho_top-moho_bottom<=1)]=moho_top[np.argwhere(moho_top-moho_bottom<=1)]+10 # avoid singularity
+    Input:
+    data_layer - Vector of initial Moho depth
+    reference - Reference layer, where data_layer is discretized (Float)
     
-    moho_bottom_shift = np.copy(moho_shift_const) # shifted layer
-    moho_top_shift = np.copy(moho) #initial Moho
+    Output:
+    layer_top,layer_bottom - Top and bottom layer of discretized model"""
+    
+    data_layer=np.copy(data_layer)/1000
+    reference=reference/1000
+    layer_top=data_layer.copy()
+    layer_bottom=data_layer.copy()
+    layer_top[layer_top < reference] = reference # upper layer
+    layer_bottom[layer_bottom > reference] = reference # lower layer
 
-    # prepare grids
-    moho_topgrid=moho_top.reshape(int((area[3]-area[2])/dx+1),int((area[1]-area[0])/dy+1), order='F').copy()
-    moho_topgrid=np.transpose(moho_topgrid)
-    moho_bottomgrid=moho_bottom.reshape(int((area[3]-area[2])/dx+1),int((area[1]-area[0])/dy+1), order='F').copy()
-    moho_bottomgrid=np.transpose(moho_bottomgrid)
 
-    moho_topgrid_shift=moho_top_shift.reshape(int((area[3]-area[2])/dx+1),int((area[1]-area[0])/dy+1), order='F').copy()
-    moho_topgrid_shift=np.transpose(moho_topgrid_shift)
-    moho_bottomgrid_shift=moho_bottom_shift.reshape(int((area[3]-area[2])/dx+1),int((area[1]-area[0])/dy+1), order='F').copy()
-    moho_bottomgrid_shift=np.transpose(moho_bottomgrid_shift)
-    return moho,moho_topgrid,moho_bottomgrid,moho_topgrid_shift,moho_bottomgrid_shift,reference
+    return layer_top,layer_bottom
     
 def Doperator(nfs,sul,suw):
-    # composes the Dmatrix 'dmat' for roughness determination
-    # nfs:      (2x1) number of patches 
-    # sul:      (1) patch length
-    # suw:      (1) patch width
-    #
+    """composes the Dmatrix 'dmat' for roughness determination
+    nfs:      (2x1) number of patches 
+    sul:      (1) patch length
+    suw:      (1) patch width
+    
+    Output:
+    DD - Smoothing matrix following 2nd order Tikhonov regularization"""
+    
     k=0;
     # dmat is the pre-operator matrix
     # defines from location of patches the neighboring patches
@@ -362,3 +256,134 @@ def Doperator(nfs,sul,suw):
             DD[i,i+1]=1/sul**2
             
     return DD
+
+
+# The following functions are included to calculate the construct point masses from tesseroids and to calculate their gravitational effect.
+# In the original publication of Haas et al. the gravitational effect of tesseroids has been calculated with the executable tesseroid files.
+# However, the .exe do not allow calculation on the browser for safety reasons. Therefore, the forward calculation has been changed to point masses.
+# The accuracy is very similar to tesseroids.
+# The following functions, as well as the annotations, are written by Wolfgang Szwillus and have to be treated confidentially.
+
+
+def masspoint_calc_FTG_2(lon,lat,depths,mass,lons,lats,heights,**kwargs):
+    """Calculate gravity field from a collection of point masses
+
+    lon, lat, depths, mass have arbitrary but identical shape
+    lons, lats and heights are vectors
+
+    Units
+    ---
+    depths are POSITIVE DOWN in km
+    heights is POSITIVE UP in m
+    mass is in kg
+    returns gravity in SI units
+
+    kwargs
+    ---
+    calc_mode can be grad, grav or potential
+
+    Returns
+    ---
+    The sensitivity matrix -> effect of each mass on all of the stations 
+    """
+
+    G=6.67428e-11
+    lon = lon[...,None]
+    lat = lat[...,None]
+    depths =depths[...,None]
+    mass = mass[...,None]
+    dLon = lon - lons
+    coslat1 = np.cos(lat/180.0*np.pi)
+    cosPsi = (coslat1 * np.cos(lats/180.0*np.pi) * np.cos(dLon/180.0*np.pi) +
+            np.sin(lat/180.0*np.pi) * np.sin(lats/180.0*np.pi))
+    cosPsi[cosPsi>1] = 1
+
+    KPhi = (np.cos(lats/180.0*np.pi) * np.sin(lat/180.0*np.pi) - 
+        np.sin(lats/180.0*np.pi) * coslat1 * np.cos(dLon/180.0*np.pi))
+
+
+    rStat = (heights + 6371000.0)
+    g = np.zeros((len(lons),len(lon)))
+    rTess = (6371000.0 - 1000.0*depths)
+    spherDist = np.sqrt(rTess**2 + rStat**2
+                            - 2 * rTess * rStat*cosPsi)
+
+    dx = KPhi * rTess
+    dy = rTess * coslat1 * np.sin(dLon/180.0*np.pi)
+    dz = rTess * cosPsi - rStat
+    
+    T = np.zeros(spherDist.shape+(6,))
+    T[...,0] = ((3.0*dz*dz/(spherDist**5)- 1.0/(spherDist**3))*mass*G)
+    return T
+
+def memory_save_masspoint_calc_FTG_2(lon,lat,depths,mass,lons,lats,heights,point_mass_number,**kwargs):
+    """Calculate gravity effect of a collection of point masses in chunks to save memory.
+    max_size gives the maximum size in bytes used for the sensitivity matrix
+    See docu for masspoint_calc_FTG_2
+    """
+    N = lon.size
+    M = lons.size
+    calc_mode = kwargs.get("calc_mode","grad")
+    max_size = kwargs.get("max_size",1000000000) # in bytes
+    verbose = kwargs.get("verbose",False)
+
+    T = np.zeros(lons.shape+(1,))
+    partitions = np.ceil(8 * N * M / max_size).astype(int)
+    if verbose:
+        print('Number of partitions ',partitions)
+    
+    ixs = np.array_split(np.arange(M,dtype=int),partitions)
+    for ix in ixs:
+        design_matrix = masspoint_calc_FTG_2(lon,lat,depths,mass,lons[ix],lats[ix],heights[ix],**kwargs)
+        J=sum_over_multidimensional_matrix(design_matrix,point_mass_number,lons,lats)
+
+        if verbose:
+            print('Parition  done')
+    return J
+
+def sum_over_multidimensional_matrix(design_matrix,point_mass_number,lons,lats):
+    J=np.zeros((len(lons),len(lats)))
+    for i in range(point_mass_number):
+        for j in range(point_mass_number):
+            for k in range(point_mass_number):
+                J_calc=np.copy(design_matrix)*-1
+                J_calc=J_calc[i][j][k][:][:][:]
+                J_calc=J_calc[:, :, 0]/10**-9
+                J=J+J_calc
+    return J 
+    
+def tesses_to_pointmass(lon,lat,dx,dy,tops,bottoms,dens,hsplit,vsplit):
+    """Convert several tesseroids into a set of point masses
+    """
+	
+    depths = np.zeros((vsplit,hsplit,hsplit)+lon.shape)
+    lon0 = np.zeros(depths.shape)
+    lat0 = np.zeros(depths.shape)
+    masses = np.zeros(depths.shape)
+    dlon = (2*np.arange(0,hsplit,1)-hsplit+1)/(2.0*hsplit)*dx
+    dlat = (2*np.arange(0,hsplit,1)-hsplit+1)/(2.0*hsplit)*dy
+    for k in range(vsplit):
+        print('Calculation point mass No',k+1)
+        if k==0:
+            top = tops
+        else:
+            top = (bottoms-tops)/(1.0*vsplit)*k + tops
+        if k==vsplit-1:
+            bot = bottoms
+        else:
+            bot = (bottoms-tops)/(1.0*vsplit)*(k+1) + tops
+        r_top = 6371-top
+        r_bot = 6371-bot
+        r_term = (r_top**3-r_bot**3)/3.0
+		
+        ind=0
+        for i in range(hsplit):
+            for j in range(hsplit):
+                lon0[k,i,j] = lon + dlon[j]
+                lat0[k,i,j] = lat + dlat[i]
+                depths[k,i,j] = 0.5 * (top+bot)
+                surface_Area = -dx*(np.pi/(180.0*hsplit)) *np.cos(
+                    lat0[k,i,j]/180.0*np.pi) * 2 * np.sin(dy/(360.0*hsplit)*np.pi)
+                masses[k,i,j] = surface_Area*dens*r_term*1e9
+                ind=ind+1
+    return lon0,lat0,depths,masses
