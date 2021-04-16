@@ -5,9 +5,13 @@ This collection contains data and code to invert satellite gravity gradient data
 The data files are taken from the following sources: \
 Gravity gradient of GOCE - http://eo-virtual-archive1.esa.int/Index.html \
 Seismological Regionalization - https://schaeffer.ca/models/sl2013sv-tectonic-regionalization/ \
-Seismic Moho depth - USGS database as published by Chulick et al. 2013
+Seismic Moho depth - USGS database as published by Chulick et al. 2013 (South America only)
 
-The collection contains two Jupyter notebook files that can be downloaded and run with Python 3. They are designed to run the inversion for the Amazonian Craton, using synthetic and satellite gravity data, as published in the paper. 
+Africa: \
+A new regionalization map is calculated usign the AF2019 seismic tomography model of Celli et al: https://nlscelli.wixsite.com/ncseismology/models \
+Seismic Moho depths are taken from the USGS data base and from Globig et al. 2016: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2016JB012972 
+
+The collection contains Jupyter notebook files that can be downloaded and run with Python 3. They are designed to run the inversion for various study areas: the Amazonian Craton,  using synthetic and satellite gravity data, as published in the paper. 
 A third version is stored in the subfolder "Variable study area". It includes Bouguer correction and allows the inversion of satellite gravity data in a user-defined study area. This notebook can alternatively be run in the browser using the Binder tool below:
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/peterH105/Gradient_Inversion/master)
