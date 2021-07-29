@@ -21,3 +21,5 @@ May 2020: An updated version, including a new notebook at user-defined study are
 
 April 2021: The repository has been revised and extended with the inversion for the African continent. This inversion is split in two steps and allows flexible density contrasts for individual cratons. For official use, please cite the following: Haas, P., Ebbing, J., Celli, N., Rey P. - Two-step gravity inversion reveals variable architecture of African cratons, submitted to Frontiers in Earth Science.
 
+July 2021: A textfile with the estimated Moho depth and density contrasts for the African continent has been uploaded.
+
